@@ -1,0 +1,135 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To-Do List App</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #f0f4fd; padding: 40px; }
+    .app { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1000px; margin: auto; }
+    .panel { background: #fff; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.1); padding: 24px; display: flex; flex-direction: column; }
+    h2 { margin-bottom: 16px; color: #333; }
+    /* Add Panel */
+    .field { margin-bottom: 12px; display: flex; flex-direction: column; }
+    .field label { margin-bottom: 4px; font-size: .9rem; }
+    .field input, .field textarea, .field select {
+      padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;
+    }
+    .field textarea { resize: vertical; height: 60px; }
+    .btn { padding: 12px; background: linear-gradient(135deg,#a8edea,#fed6e3); border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition:opacity .2s; }
+    .btn:hover { opacity: .8; }
+    /* Utilities */
+    .utilities { grid-column: 1 / -1; display: flex; gap: 10px; margin-bottom: 10px; }
+    .utilities .btn { flex: 1; }
+    /* List Panel */
+    .task-list { flex: 1; overflow-y: auto; }
+    .task { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; background: #f9f9f9; padding: 12px; border-radius: 12px; margin-bottom: 12px; }
+    .task.completed { opacity: .6; }
+    .task .info { display: flex; flex-direction: column; }
+    .task .info .title { font-size: 1rem; font-weight: 600; }
+    .task .info .meta { font-size: .8rem; color: #666; }
+    .labels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .label { background: #fed6e3; padding: 2px 6px; border-radius: 4px; font-size: .7rem; }
+    .actions { display: flex; gap: 8px; }
+    .actions button { background: none; border: none; cursor: pointer; font-size: 1.1rem; }
+    .progress { grid-column: 2; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+    .progress .bar { height: 100%; background: #a8edea; width: 0; transition: width .3s; }
+  </style>
+</head>
+<body>
+  <div class="utilities">
+    <button class="btn" onclick="bulkDelete()">Delete Completed</button>
+    <button class="btn" onclick="clearAll()">Clear All</button>
+    <button class="btn" onclick="exportTasks()">Export JSON</button>
+    <button class="btn" onclick="document.getElementById('importFile').click()">Import JSON</button>
+    <input type="file" id="importFile" style="display:none" onchange="importTasks(event)">
+  </div>
+  <div class="app">
+    <div class="panel" id="addPanel">
+      <h2>Add Task</h2>
+      <div class="field"><label>Title</label><input id="taskTitle"></div>
+      <div class="field"><label>Description</label><textarea id="taskDesc"></textarea></div>
+      <div class="field"><label>Due Date & Time</label><input type="datetime-local" id="taskDue"></div>
+      <div class="field"><label>Priority</label><select id="taskPriority"><option>Low</option><option>Medium</option><option>High</option></select></div>
+      <div class="field"><label>Category</label><input id="taskCategory" placeholder="e.g. Work, Personal"></div>
+      <button class="btn" id="addBtn">Add Task</button>
+    </div>
+    <div class="panel">
+      <h2>Task List</h2>
+      <div class="progress"><div class="bar" id="progressBar"></div></div>
+      <div class="field"><label>Filter</label><select id="filterStatus"><option value="all">All</option><option value="active">Active</option><option value="completed">Completed</option></select></div>
+      <div class="field"><label>Sort</label><select id="sortOrder"><option value="none">None</option><option value="alpha">A → Z</option><option value="date">Newest</option></select></div>
+      <div class="field"><label>Search</label><input id="search" type="search" placeholder="Search..."></div>
+      <div class="task-list" id="taskList"></div>
+    </div>
+  </div>
+  <script>
+    let tasks = JSON.parse(localStorage.getItem('tasks')||'[]');
+    const save = () => localStorage.setItem('tasks', JSON.stringify(tasks));
+    const listEl = document.getElementById('taskList'), bar = document.getElementById('progressBar');
+    function render() {
+      listEl.innerHTML=''; let done=0; let filtered = tasks;
+      // filter
+      const fs = document.getElementById('filterStatus').value;
+      if(fs==='active') filtered = filtered.filter(t=>!t.completed);
+      if(fs==='completed') filtered = filtered.filter(t=>t.completed);
+      // search
+      const term=document.getElementById('search').value.toLowerCase();
+      if(term) filtered = filtered.filter(t=>t.title.toLowerCase().includes(term));
+      // sort
+      const so=document.getElementById('sortOrder').value;
+      if(so==='alpha') filtered.sort((a,b)=>a.title.localeCompare(b.title));
+      if(so==='date') filtered.sort((a,b)=>b.id-a.id);
+      filtered.forEach((t,i)=>{
+        if(t.completed) done++;
+        const div=document.createElement('div'); div.className='task'+(t.completed?' completed':'');
+        div.innerHTML = `
+          <input type="checkbox" ${t.completed?'checked':''} onchange="toggle(${t.id})">
+          <div class="info">
+            <div class="title">${t.title}</div>
+            <div class="meta">${t.desc||''}</div>
+            <div class="meta">Due: ${t.due?new Date(t.due).toLocaleString():'--'}</div>
+            <div class="labels">
+              <span class="label">${t.priority}</span>
+              ${t.category?`<span class="label">${t.category}</span>`:''}
+            </div>
+          </div>
+          <div class="actions">
+            <button onclick="edit(${t.id})">✏️</button>
+            <button onclick="remove(${t.id})">🗑️</button>
+          </div>`;
+        listEl.appendChild(div);
+      });
+      bar.style.width = tasks.length?done/tasks.length*100+'%':'0'; save();
+    }
+    // actions
+    window.toggle = id => { const t=tasks.find(x=>x.id===id); t.completed = !t.completed; render(); };
+    window.remove = id => { tasks = tasks.filter(x=>x.id!==id); render(); };
+    window.edit = id => {
+      const t=tasks.find(x=>x.id===id);
+      const title = prompt('Edit Title', t.title); if(title) t.title=title;
+      const desc = prompt('Edit Description', t.desc); if(desc!==null) t.desc=desc;
+      render();
+    };
+    document.getElementById('addBtn').onclick = () => {
+      const title = document.getElementById('taskTitle').value.trim(); if(!title) return;
+      tasks.push({ id:Date.now(), title, desc:document.getElementById('taskDesc').value.trim(), due:document.getElementById('taskDue').value, priority:document.getElementById('taskPriority').value, category:document.getElementById('taskCategory').value.trim(), completed:false });
+      ['taskTitle','taskDesc','taskDue','taskCategory'].forEach(id=>document.getElementById(id).value=''); render();
+    };
+    // bulk
+    function bulkDelete(){ if(confirm('Delete completed?')){ tasks=tasks.filter(t=>!t.completed); render(); }}
+    function clearAll(){ if(confirm('Clear all tasks?')){ tasks=[]; render(); }}
+    // export/import
+    function exportTasks(){ const a=document.createElement('a'); a.href='data:application/json,'+encodeURIComponent(JSON.stringify(tasks)); a.download='tasks.json'; a.click(); }
+    function importTasks(e){ const fr=new FileReader(); fr.onload=()=>{ tasks=JSON.parse(fr.result); render(); }; fr.readAsText(e.target.files[0]); }
+    // reminders
+    if(Notification && Notification.permission!=='granted') Notification.requestPermission();
+    setInterval(()=>{ tasks.forEach(t=>{ if(t.due && !t.notif && new Date(t.due)<=new Date()){ new Notification('Task Due', { body:t.title }); t.notif=true; save(); }}); },60000);
+    // listeners
+    ['filterStatus','sortOrder','search'].forEach(id=>document.getElementById(id).onchange=render);
+    render();
+  </script>
+  <input type="file" id="importFile" style="display:none" onchange="importTasks(event)">
+</body>
+</html>
